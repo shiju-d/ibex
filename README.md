@@ -130,21 +130,21 @@ Each session is isolated — your conversation doesn't bleed into someone else's
 │  │    Ollama    │     │   Docker              │ │
 │  │  port 11434  │◄────│                       │ │
 │  │              │     │  ┌─────────────────┐  │ │
-│  │ qwen2.5-     │     │  │   RAG Container │  │ │
+│  │ qwen2.5-     │     │  │   ibex          │  │ │
 │  │ coder:7b     │     │  │   port 8000     │  │ │
 │  │              │     │  │                 │  │ │
 │  │ mxbai-embed- │     │  │  runner.py      │  │ │
 │  │ large        │     │  │  LlamaIndex     │  │ │
 │  └──────────────┘     │  │  ChromaDB       │  │ │
-│                        │  └────────┬────────┘  │ │
-│                        │           │ reads      │ │
-│                        │  ┌────────▼────────┐  │ │
-│                        │  │  /app/ibe (ro)  │  │ │
-│                        │  │  ibe-api/       │  │ │
-│                        │  │  ibe-frontend/  │  │ │
-│                        │  │  ibe-admin/     │  │ │
-│                        │  └─────────────────┘  │ │
-│                        └───────────────────────┘ │
+│                       │  └────────┬────────┘  │ │
+│                       │           │ reads     │ │
+│                       │  ┌────────▼────────┐  │ │
+│                       │  │  /app/ibe (ro)  │  │ │
+│                       │  │  ibe-api/       │  │ │
+│                       │  │  ibe-frontend/  │  │ │
+│                       │  │  ibe-admin/     │  │ │
+│                       │  └─────────────────┘  │ │
+│                       └───────────────────────┘ │
 └─────────────────────────────────────────────────┘
                           ▲
                           │ POST /chat
@@ -194,12 +194,25 @@ POST /chat
 ollama pull qwen2.5-coder:7b
 ollama pull mxbai-embed-large
 
-# 2. Start the RAG container
+# 2. Start ibex
 cd rag
-docker compose up --build
+docker-compose up --build
 
 # 3. First run takes 1-3 minutes to index the codebase
 #    Subsequent starts load from disk in ~2 seconds
+```
+
+### Useful commands
+
+```bash
+# View logs
+docker-compose logs ibex
+
+# Stop
+docker-compose down
+
+# Rebuild after code changes to runner.py
+docker-compose up --build
 ```
 
 ### After pulling new code changes
