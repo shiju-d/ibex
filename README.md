@@ -210,7 +210,7 @@ POST /chat
 
 ### Enabling the Claude endpoint
 
-Create a `.env` file in the `rag/` directory:
+Create a `.env` file in the `ibex/` directory:
 
 ```
 ANTHROPIC_API_KEY=sk-ant-...
@@ -237,7 +237,33 @@ BEDROCK_MODEL_ID=global.anthropic.claude-sonnet-4-5-20250929-v1:0
 
 ## n8n Workflow
 
-Import `IBE-RAG-MultiEndpoint.json` into n8n to get a chat UI where you select the LLM by prefixing your message:
+### Prerequisites
+
+n8n must be running before importing the workflow. The quickest way to start it locally with Docker:
+
+```bash
+docker run -it --rm \
+  --name n8n \
+  -p 5678:5678 \
+  -v n8n_data:/home/node/.n8n \
+  --add-host=host.docker.internal:host-gateway \
+  docker.n8n.io/n8nio/n8n
+```
+
+Then open `http://localhost:5678` in your browser and create an account.
+
+> The `--add-host` flag is required so n8n can reach ibex at `host.docker.internal:8000`.
+
+### Importing the workflow
+
+1. In n8n, go to **Workflows → Add workflow → Import from file**
+2. Select `ibex/IBE-RAG-MultiEndpoint.json`
+3. Activate the workflow with the toggle in the top-right corner
+4. Open the **Chat** panel to start sending messages
+
+### Usage
+
+Select the LLM by prefixing your message:
 
 | Prefix | LLM |
 |--------|-----|
@@ -262,7 +288,7 @@ ollama pull qwen2.5-coder:7b
 ollama pull mxbai-embed-large
 
 # 2. Start ibex
-cd rag
+cd ibex
 docker-compose up --build
 
 # 3. First run takes 1-3 minutes to index the codebase

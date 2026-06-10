@@ -90,7 +90,7 @@ def _build_index():
             required_exts=[".js", ".jsx", ".ts", ".tsx"], exclude_hidden=True,
             exclude=[
                 "**/node_modules/**", "**/dist/**", "**/.git/**",
-                "**/rag/**", "**/log/**", "**/tmp/**",
+                "**/ibex/**", "**/log/**", "**/tmp/**",
                 "**/__tests__/**", "**/*.spec.ts", "**/*.test.ts",
                 "**/cypress/**", "**/e2e/**"
             ]
