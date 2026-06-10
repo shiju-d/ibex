@@ -91,7 +91,7 @@ This takes 1–3 minutes the first time. After that, the index is saved to disk 
 6. The answer + the source file paths are returned to you
 ```
 
-The top 8 chunks means better cross-file tracing — the model can see a controller, its service, and the repository all at once when answering. All three endpoints retrieve the same chunks from the same index; only the model that generates the answer differs.
+The top 8 chunks means better cross-file tracing — the model can see a controller, its service, and the repository all at once. All three endpoints use the same retrieved chunks; only the model that writes the answer differs.
 
 ---
 
@@ -147,22 +147,22 @@ Each session is isolated — your conversation doesn't bleed into someone else's
 ┌────────────────────────────────────┼──────────────────────────────┐
 │ Your Machine                       │                              │
 │                                    │                              │
-│  ┌──────────────┐   ┌──────────────┴──────────────────────────┐  │
-│  │    Ollama    │   │   Docker                                 │  │
-│  │  port 11434  │◄──│                                          │  │
-│  │              │   │  ┌──────────────────────────────────┐   │  │
-│  │ qwen2.5-     │   │  │   ibex  (port 8000)              │   │  │
-│  │ coder:7b  ◄──┼───┼──│                                  │   │  │
-│  │              │   │  │  runner.py  LlamaIndex  ChromaDB │   │  │
-│  │ mxbai-embed- │   │  └──────────────┬───────────────────┘   │  │
-│  │ large     ◄──┼───┘                 │ reads                  │  │
-│  └──────────────┘     ┌───────────────▼───────────────────┐   │  │
-│                        │  /app/ibe (read-only)             │   │  │
-│                        │  ibe-api/  ibe-frontend/          │   │  │
-│                        │  ibe-admin/                       │   │  │
-│                        └───────────────────────────────────┘   │  │
-│                                                                 │  │
-└─────────────────────────────────────────────────────────────────┘
+│  ┌──────────────┐   ┌──────────────┴──────────────────────────┐   │
+│  │    Ollama    │   │   Docker                                │   │
+│  │  port 11434  │◄──│                                         │   │
+│  │              │   │  ┌──────────────────────────────────┐   │   │
+│  │ qwen2.5-     │   │  │   ibex  (port 8000)              │   │   │
+│  │ coder:7b  ◄──┼───┼──│                                  │   │   │
+│  │              │   │  │  runner.py  LlamaIndex  ChromaDB │   │   │
+│  │ mxbai-embed- │   │  └──────────────┬───────────────────┘   │   │
+│  │ large     ◄──┼───┘                 │ reads                 │   │
+│  └──────────────┘     ┌───────────────▼───────────────────┐   │   │
+│                       │  /app/ibe (read-only)             │   │   │
+│                       │  ibe-api/  ibe-frontend/          │   │   │
+│                       │  ibe-admin/                       │   │   │
+│                       └───────────────────────────────────┘   │   │
+│                                                                   │ 
+└─────────────────────────────────────────────────────────────────--┘
                                ▲
                                │ POST /chat
                                │ POST /chat/claude
@@ -225,11 +225,11 @@ Add your AWS credentials to the same `.env` file:
 ```
 AWS_ACCESS_KEY_ID=AKIA...
 AWS_SECRET_ACCESS_KEY=...
-AWS_REGION_NAME=us-east-1
+AWS_REGION=us-east-1
 BEDROCK_MODEL_ID=global.anthropic.claude-sonnet-4-5-20250929-v1:0
 ```
 
-`AWS_REGION_NAME` has a default (`us-east-1`) — only `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `BEDROCK_MODEL_ID` are required. If the AWS keys are missing, `POST /chat/bedrock` returns `503`.
+`AWS_REGION` has a default (`us-east-1`) — only `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `BEDROCK_MODEL_ID` are required. If the AWS keys are missing, `POST /chat/bedrock` returns `503`.
 
 **Important:** Newer Claude models on Bedrock (Claude 3.7+) require a **cross-region inference profile ID**, not a plain model ID. Profile IDs are prefixed with `us.`, `eu.`, or `global.` — find yours in the Bedrock console under **Infer → Inference profiles**. The IAM user or role must have `bedrock:InvokeModel` permission.
 
