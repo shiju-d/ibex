@@ -1,6 +1,6 @@
 # ibex — IBE Expert
 
-> Local AI-powered bug analysis for the IBE codebase.
+> AI-powered code intelligence for the IBE codebase — local Ollama, Anthropic Claude, or AWS Bedrock.
 
 ## The Three Pieces
 
@@ -19,18 +19,23 @@ The RAG container talks to Ollama via `host.docker.internal:11434`, which is Doc
 
 ---
 
-### 2. The Two Models
+### 2. The Models
 
-#### `qwen2.5-coder:7b` — The Answering Brain
-- Made by Alibaba's Qwen team, trained specifically on code
-- **7b** means 7 billion parameters — think of it as 7 billion tiny knobs that were tuned to understand and reason about code
-- It reads the relevant code chunks and writes a human-readable answer
-- Runs locally via Ollama, responds in ~5–15 seconds depending on your hardware
-
-#### `mxbai-embed-large` — The Filing System
-- This model doesn't answer questions — it converts text into a list of numbers called an **embedding**
+#### `mxbai-embed-large` — The Filing System (always used)
+- Runs locally via Ollama — used by every endpoint
+- Doesn't answer questions; converts text into a list of numbers called an **embedding**
 - Similar text produces similar numbers, so "checkout fails" and "payment error" end up near each other in number-space
 - Used twice: once to file every code chunk when indexing, and once to convert your question before searching
+
+#### Answering models — choose one per request
+
+| Model | Where it runs | Best for |
+|-------|--------------|----------|
+| `qwen2.5-coder:7b` | Local via Ollama | Offline use, fast iteration, no API costs |
+| `claude-sonnet-4-6` | Anthropic API | Deeper reasoning, richer explanations |
+| `claude-sonnet-4-5` | AWS Bedrock | Cloud-hosted Claude via your AWS account |
+
+All three models read the same retrieved code chunks — only the answering step differs.
 
 ---
 
@@ -39,8 +44,12 @@ The RAG container talks to Ollama via `host.docker.internal:11434`, which is Doc
 LlamaIndex is the Python library that connects everything:
 
 ```
-Your files → LlamaIndex → TokenTextSplitter → mxbai-embed-large → ChromaDB (stored on disk)
-Your question → LlamaIndex → mxbai-embed-large → find top 8 matches → qwen2.5-coder:7b → answer
+Your files  → LlamaIndex → TokenTextSplitter → mxbai-embed-large → ChromaDB (stored on disk)
+
+Your question → LlamaIndex → mxbai-embed-large → find top 8 matches → answering model → answer
+                                                                          ├── qwen2.5-coder:7b  (POST /chat)
+                                                                          ├── claude-sonnet-4-6 (POST /chat/claude)
+                                                                          └── claude-sonnet-4-5 (POST /chat/bedrock)
 ```
 
 ---
@@ -71,15 +80,18 @@ This takes 1–3 minutes the first time. After that, the index is saved to disk 
 ### When You Ask a Question
 
 ```
-1. Your message arrives at POST /chat
+1. Your message arrives at one of the three endpoints:
+      POST /chat          → qwen2.5-coder:7b  (local)
+      POST /chat/claude   → claude-sonnet-4-6 (Anthropic API)
+      POST /chat/bedrock  → claude-sonnet-4-5 (AWS Bedrock)
 2. mxbai-embed-large converts your question into numbers
 3. ChromaDB finds the 8 code chunks whose numbers are closest to your question's numbers
-4. Those 8 chunks + your question are sent to qwen2.5-coder:7b
+4. Those 8 chunks + your question are sent to the chosen model
 5. The model reads the chunks and writes an answer
 6. The answer + the source file paths are returned to you
 ```
 
-The top 8 chunks (up from 5) means better cross-file tracing — the model can see a controller, its service, and the repository all at once when debugging a bug.
+The top 8 chunks means better cross-file tracing — the model can see a controller, its service, and the repository all at once when answering. All three endpoints retrieve the same chunks from the same index; only the model that generates the answer differs.
 
 ---
 
@@ -123,36 +135,43 @@ Each session is isolated — your conversation doesn't bleed into someone else's
 ## The Full Architecture
 
 ```
-┌─────────────────────────────────────────────────┐
-│                  Your Machine                   │
-│                                                 │
-│  ┌──────────────┐     ┌───────────────────────┐ │
-│  │    Ollama    │     │   Docker              │ │
-│  │  port 11434  │◄────│                       │ │
-│  │              │     │  ┌─────────────────┐  │ │
-│  │ qwen2.5-     │     │  │   ibex          │  │ │
-│  │ coder:7b     │     │  │   port 8000     │  │ │
-│  │              │     │  │                 │  │ │
-│  │ mxbai-embed- │     │  │  runner.py      │  │ │
-│  │ large        │     │  │  LlamaIndex     │  │ │
-│  └──────────────┘     │  │  ChromaDB       │  │ │
-│                       │  └────────┬────────┘  │ │
-│                       │           │ reads     │ │
-│                       │  ┌────────▼────────┐  │ │
-│                       │  │  /app/ibe (ro)  │  │ │
-│                       │  │  ibe-api/       │  │ │
-│                       │  │  ibe-frontend/  │  │ │
-│                       │  │  ibe-admin/     │  │ │
-│                       │  └─────────────────┘  │ │
-│                       └───────────────────────┘ │
-└─────────────────────────────────────────────────┘
-                          ▲
-                          │ POST /chat
-                   ┌──────┴───────┐
-                   │     n8n      │
-                   │  Chat UI →   │
-                   │  HTTP Node   │
-                   └──────────────┘
+                                          ┌─────────────────────┐
+                                     ┌───►│  Anthropic API      │
+                                     │    │  claude-sonnet-4-6  │
+                                     │    └─────────────────────┘
+                                     │
+                                     │    ┌─────────────────────┐
+                                     ├───►│  AWS Bedrock        │
+                                     │    │  claude-sonnet-4-5  │
+                                     │    └─────────────────────┘
+┌────────────────────────────────────┼──────────────────────────────┐
+│ Your Machine                       │                              │
+│                                    │                              │
+│  ┌──────────────┐   ┌──────────────┴──────────────────────────┐  │
+│  │    Ollama    │   │   Docker                                 │  │
+│  │  port 11434  │◄──│                                          │  │
+│  │              │   │  ┌──────────────────────────────────┐   │  │
+│  │ qwen2.5-     │   │  │   ibex  (port 8000)              │   │  │
+│  │ coder:7b  ◄──┼───┼──│                                  │   │  │
+│  │              │   │  │  runner.py  LlamaIndex  ChromaDB │   │  │
+│  │ mxbai-embed- │   │  └──────────────┬───────────────────┘   │  │
+│  │ large     ◄──┼───┘                 │ reads                  │  │
+│  └──────────────┘     ┌───────────────▼───────────────────┐   │  │
+│                        │  /app/ibe (read-only)             │   │  │
+│                        │  ibe-api/  ibe-frontend/          │   │  │
+│                        │  ibe-admin/                       │   │  │
+│                        └───────────────────────────────────┘   │  │
+│                                                                 │  │
+└─────────────────────────────────────────────────────────────────┘
+                               ▲
+                               │ POST /chat
+                               │ POST /chat/claude
+                               │ POST /chat/bedrock
+                        ┌──────┴───────┐
+                        │     n8n      │
+                        │  Chat UI →   │
+                        │  HTTP Node   │
+                        └──────────────┘
 ```
 
 ---
