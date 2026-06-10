@@ -1,0 +1,151 @@
+{
+  "name": "IBE-RAG-MultiEndpoint",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.4,
+      "position": [0, 0],
+      "id": "a1b2c3d4-e5f6-7890-abcd-100000000001",
+      "name": "When chat message received",
+      "webhookId": "f1e2d3c4-b5a6-7890-abcd-200000000001"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "asg-001",
+              "name": "endpoint",
+              "value": "={{ /^(local|claude|bedrock):/i.test($json.chatInput) ? $json.chatInput.split(':')[0].toLowerCase().trim() : 'local' }}",
+              "type": "string"
+            },
+            {
+              "id": "asg-002",
+              "name": "message",
+              "value": "={{ /^(local|claude|bedrock):/i.test($json.chatInput) ? $json.chatInput.replace(/^(local|claude|bedrock):\\s*/i, '') : $json.chatInput }}",
+              "type": "string"
+            },
+            {
+              "id": "asg-003",
+              "name": "session_id",
+              "value": "={{ /^claude:/i.test($json.chatInput) ? 'claude-session' : /^bedrock:/i.test($json.chatInput) ? 'bedrock-session' : 'local-session' }}",
+              "type": "string"
+            },
+            {
+              "id": "asg-004",
+              "name": "url",
+              "value": "={{ /^claude:/i.test($json.chatInput) ? 'http://host.docker.internal:8000/chat/claude' : /^bedrock:/i.test($json.chatInput) ? 'http://host.docker.internal:8000/chat/bedrock' : 'http://host.docker.internal:8000/chat' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [240, 0],
+      "id": "a1b2c3d4-e5f6-7890-abcd-100000000002",
+      "name": "Parse Input"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.url }}",
+        "sendBody": true,
+        "specifyBody": "keypair",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "message",
+              "value": "={{ $json.message }}"
+            },
+            {
+              "name": "session_id",
+              "value": "={{ $json.session_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [480, 0],
+      "id": "a1b2c3d4-e5f6-7890-abcd-100000000003",
+      "name": "RAG Request"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "asg-005",
+              "name": "output",
+              "value": "={{ $json.response }}",
+              "type": "string"
+            },
+            {
+              "id": "asg-006",
+              "name": "sources",
+              "value": "={{ $json.sources.join('\\n') }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [720, 0],
+      "id": "a1b2c3d4-e5f6-7890-abcd-100000000004",
+      "name": "Format Response"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "Parse Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Input": {
+      "main": [
+        [
+          {
+            "node": "RAG Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RAG Request": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "instanceId": "300d955eef7411856c235fa3cfdcb547fe1d57154df1136a89ade29ebe71d75d"
+  },
+  "nodeGroups": [],
+  "tags": []
+}

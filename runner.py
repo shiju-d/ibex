@@ -9,12 +9,27 @@ from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings, 
 from llama_index.core.node_parser import TokenTextSplitter
 from llama_index.core.memory import ChatMemoryBuffer
 from llama_index.llms.ollama import Ollama
+from llama_index.llms.anthropic import Anthropic
+from llama_index.llms.bedrock_converse import BedrockConverse
 from llama_index.embeddings.ollama import OllamaEmbedding
 from llama_index.vector_stores.chroma import ChromaVectorStore
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-3-5-sonnet-20241022-v2:0")
 
-Settings.llm = Ollama(base_url=OLLAMA_BASE_URL, model="qwen2.5-coder:7b", request_timeout=120.0)
+local_llm = Ollama(base_url=OLLAMA_BASE_URL, model="qwen2.5-coder:7b", request_timeout=120.0)
+claude_llm = Anthropic(model="claude-sonnet-4-6", api_key=ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY else None
+bedrock_llm = BedrockConverse(
+    model=BEDROCK_MODEL_ID,
+    aws_access_key_id=AWS_ACCESS_KEY_ID,
+    aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+    region_name=AWS_REGION,
+) if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY else None
+
 Settings.embed_model = OllamaEmbedding(base_url=OLLAMA_BASE_URL, model_name="mxbai-embed-large")
 
 SYSTEM_PROMPT = """You are an expert software engineer specializing in debugging the Stayntouch IBE application.
@@ -32,24 +47,28 @@ When analysing bugs:
 
 index = None
 MAX_SESSIONS = 100
-session_memories: OrderedDict = OrderedDict()
-session_engines: OrderedDict = OrderedDict()
+
+local_sessions: OrderedDict = OrderedDict()
+claude_sessions: OrderedDict = OrderedDict()
+bedrock_sessions: OrderedDict = OrderedDict()
 
 
-def _get_engine(session_id: str):
-    if session_id not in session_engines:
-        if len(session_engines) >= MAX_SESSIONS:
-            session_memories.popitem(last=False)
-            session_engines.popitem(last=False)
+def _get_engine(session_id: str, llm, sessions: OrderedDict):
+    if session_id not in sessions:
+        if len(sessions) >= MAX_SESSIONS:
+            sessions.popitem(last=False)
         memory = ChatMemoryBuffer.from_defaults(token_limit=2048)
-        session_memories[session_id] = memory
-        session_engines[session_id] = index.as_chat_engine(
-            chat_mode="condense_plus_context",
-            memory=memory,
-            similarity_top_k=8,
-            system_prompt=SYSTEM_PROMPT,
-        )
-    return session_engines[session_id]
+        sessions[session_id] = {
+            "memory": memory,
+            "engine": index.as_chat_engine(
+                chat_mode="condense_plus_context",
+                llm=llm,
+                memory=memory,
+                similarity_top_k=8,
+                system_prompt=SYSTEM_PROMPT,
+            )
+        }
+    return sessions[session_id]["engine"]
 
 
 def _build_index():
@@ -96,7 +115,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="IBE Codebase RAG API", lifespan=lifespan)
+app = FastAPI(title="ibex", lifespan=lifespan)
 
 
 class ChatRequest(BaseModel):
@@ -104,12 +123,11 @@ class ChatRequest(BaseModel):
     session_id: str = "default"
 
 
-@app.post("/chat")
-async def chat_endpoint(request: ChatRequest):
+async def _chat(request: ChatRequest, llm, sessions: OrderedDict):
     if index is None:
         raise HTTPException(status_code=503, detail="RAG engine is initializing")
     try:
-        engine = _get_engine(request.session_id)
+        engine = _get_engine(request.session_id, llm, sessions)
         response = await asyncio.to_thread(engine.chat, request.message)
         sources = list({
             node.metadata.get("file_path", "unknown")
@@ -120,10 +138,30 @@ async def chat_endpoint(request: ChatRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/chat")
+async def chat_local(request: ChatRequest):
+    return await _chat(request, local_llm, local_sessions)
+
+
+@app.post("/chat/claude")
+async def chat_claude(request: ChatRequest):
+    if not claude_llm:
+        raise HTTPException(status_code=503, detail="ANTHROPIC_API_KEY not configured")
+    return await _chat(request, claude_llm, claude_sessions)
+
+
+@app.post("/chat/bedrock")
+async def chat_bedrock(request: ChatRequest):
+    if not bedrock_llm:
+        raise HTTPException(status_code=503, detail="AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY not configured")
+    return await _chat(request, bedrock_llm, bedrock_sessions)
+
+
 @app.delete("/session/{session_id}")
 def clear_session(session_id: str):
-    session_memories.pop(session_id, None)
-    session_engines.pop(session_id, None)
+    local_sessions.pop(session_id, None)
+    claude_sessions.pop(session_id, None)
+    bedrock_sessions.pop(session_id, None)
     return {"cleared": session_id}
 
 
@@ -131,8 +169,9 @@ def clear_session(session_id: str):
 async def reindex():
     global index
     index = None
-    session_engines.clear()
-    session_memories.clear()
+    local_sessions.clear()
+    claude_sessions.clear()
+    bedrock_sessions.clear()
     chroma_client = chromadb.PersistentClient(path="/app/chroma_db")
     chroma_client.delete_collection("ibe_codebase")
     await asyncio.to_thread(_build_index)

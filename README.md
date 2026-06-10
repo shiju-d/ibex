@@ -159,11 +159,15 @@ Each session is isolated — your conversation doesn't bleed into someone else's
 
 ## API Endpoints
 
-| Endpoint | What it does |
-|----------|--------------|
-| `POST /chat` | Ask a question. Send `message` and `session_id`. |
-| `DELETE /session/{id}` | Clear conversation history for a session. |
-| `POST /reindex` | Wipe and rebuild the index (use after code changes). |
+| Endpoint | LLM | What it does |
+|----------|-----|--------------|
+| `POST /chat` | `qwen2.5-coder:7b` (local) | Ask a question using the local Ollama model. Fully offline. |
+| `POST /chat/claude` | `claude-sonnet-4-6` (Anthropic API) | Ask a question using Claude. Requires `ANTHROPIC_API_KEY`. |
+| `POST /chat/bedrock` | `claude-sonnet-4-5` (AWS Bedrock) | Ask a question via AWS Bedrock. Requires AWS credentials. |
+| `DELETE /session/{id}` | — | Clear conversation history for a session (all endpoints). |
+| `POST /reindex` | — | Wipe and rebuild the index (use after code changes). |
+
+All three chat endpoints accept the same request body and return the same response shape. Sessions are independent per endpoint — a `session_id` used on `/chat` has no memory of conversations on `/chat/claude` or `/chat/bedrock`.
 
 ### Example request
 ```json
@@ -183,6 +187,50 @@ POST /chat
     "/app/ibe/ibe-api/src/controllers/cart.controller.ts"
   ]
 }
+```
+
+### Enabling the Claude endpoint
+
+Create a `.env` file in the `rag/` directory:
+
+```
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Docker Compose picks this up automatically. If the key is not set, `POST /chat/claude` returns `503`.
+
+### Enabling the Bedrock endpoint
+
+Add your AWS credentials to the same `.env` file:
+
+```
+AWS_ACCESS_KEY_ID=AKIA...
+AWS_SECRET_ACCESS_KEY=...
+AWS_REGION_NAME=us-east-1
+BEDROCK_MODEL_ID=global.anthropic.claude-sonnet-4-5-20250929-v1:0
+```
+
+`AWS_REGION_NAME` has a default (`us-east-1`) — only `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `BEDROCK_MODEL_ID` are required. If the AWS keys are missing, `POST /chat/bedrock` returns `503`.
+
+**Important:** Newer Claude models on Bedrock (Claude 3.7+) require a **cross-region inference profile ID**, not a plain model ID. Profile IDs are prefixed with `us.`, `eu.`, or `global.` — find yours in the Bedrock console under **Infer → Inference profiles**. The IAM user or role must have `bedrock:InvokeModel` permission.
+
+---
+
+## n8n Workflow
+
+Import `IBE-RAG-MultiEndpoint.json` into n8n to get a chat UI where you select the LLM by prefixing your message:
+
+| Prefix | LLM |
+|--------|-----|
+| `local: <message>` | qwen2.5-coder:7b (local, offline) |
+| `claude: <message>` | Claude Sonnet 4.6 (Anthropic API) |
+| `bedrock: <message>` | Claude Sonnet 4.5 (AWS Bedrock) |
+| *(no prefix)* | qwen2.5-coder:7b (default) |
+
+**Example:**
+```
+bedrock: Why is checkout failing when a promo code is applied?
+claude: Trace the call chain for the cart service
 ```
 
 ---

@@ -8,6 +8,11 @@ services:
       - chroma_data:/app/chroma_db
     environment:
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - BEDROCK_MODEL_ID=${BEDROCK_MODEL_ID:-anthropic.claude-3-5-sonnet-20241022-v2:0}
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
